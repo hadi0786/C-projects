@@ -1,0 +1,273 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <iomanip>
+#include <limits>
+#include <vector>
+
+using namespace std;
+
+const int MAX_CANDIDATES = 10;
+
+bool isValidCnic(const string &cnic) {
+    if (cnic.size() != 15 || cnic[5] != '-' || cnic[13] != '-') {
+        return false;
+    }
+    for (size_t i = 0; i < cnic.size(); ++i) {
+        if ((i == 5 || i == 13) && cnic[i] == '-') continue;
+        if (!isdigit(cnic[i])) return false;
+    }
+    return true;
+}
+
+bool isCnicUnique(const string &cnic) {
+    ifstream voterFile("voters.txt");
+    string line;
+
+    while (getline(voterFile, line)) {
+        if (line.find(cnic) != string::npos) {
+            voterFile.close();
+            return false;
+        }
+    }
+
+    voterFile.close();
+    return true;
+}
+
+void registerVoters() {
+    ofstream voterFile("voters.txt", ios::app);
+    int numVoters;
+
+    cout << "\nEnter the number of voters to register: ";
+    while (!(cin >> numVoters) || numVoters <= 0) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Invalid input. Please enter a valid number of voters: ";
+    }
+
+    cin.ignore();
+    for (int i = 0; i < numVoters; ++i) {
+        cout << "\n--- Registering Voter " << i + 1 << " ---\n";
+
+        string name, cnic, city, area;
+        cout << "Name: ";
+        getline(cin, name);
+
+        while (true) {
+            cout << "CNIC (e.g., 12345-6789012-3): ";
+            cin >> cnic;
+            if (!isValidCnic(cnic)) {
+                cout << "Invalid CNIC format. Try again.\n";
+            } else if (!isCnicUnique(cnic)) {
+                cout << "This CNIC is already registered. Try again.\n";
+            } else {
+                break;
+            }
+        }
+
+        cin.ignore();
+        cout << "City: ";
+        getline(cin, city);
+
+        cout << "Area: ";
+        getline(cin, area);
+
+        voterFile << name << "," << cnic << "," << city << "," << area << "\n";
+        cout << "Voter registered successfully!\n";
+    }
+
+    voterFile.close();
+}
+
+void addCandidates() {
+    ofstream candidateFile("candidates.txt", ios::app);
+    int numCandidates;
+
+    cout << "Enter the number of candidates: ";
+    while (!(cin >> numCandidates) || numCandidates <= 0 || numCandidates > MAX_CANDIDATES) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Invalid input. Please enter a number between 1 and " << MAX_CANDIDATES << ": ";
+    }
+
+    cin.ignore();
+    for (int i = 0; i < numCandidates; ++i) {
+        string candidateName;
+        cout << "Enter the name of candidate " << i + 1 << ": ";
+        getline(cin, candidateName);
+
+        candidateFile << candidateName << ",0\n";
+        cout << "Candidate added successfully!\n";
+    }
+
+    candidateFile.close();
+}
+
+void votingProcess() {
+    ifstream voterFile("voters.txt");
+    ifstream candidateFile("candidates.txt");
+    ofstream tempCandidateFile("temp_candidates.txt");
+
+    if (!voterFile.is_open() || !candidateFile.is_open()) {
+        cout << "Error opening voter or candidate file. Ensure data is initialized.\n";
+        return;
+    }
+
+    string enteredCnic;
+    string voterLine, candidateLine;
+
+    cout << "\nEnter your CNIC to vote: ";
+    cin >> enteredCnic;
+
+    bool foundVoter = false;
+    while (getline(voterFile, voterLine)) {
+        if (voterLine.find(enteredCnic) != string::npos) {
+            foundVoter = true;
+            break;
+        }
+    }
+
+    if (!foundVoter) {
+        cout << "Invalid CNIC! Please register before voting.\n";
+        voterFile.close();
+        candidateFile.close();
+        tempCandidateFile.close();
+        return;
+    }
+
+    cout << "\nCandidates:\n";
+    vector<string> candidates;
+    while (getline(candidateFile, candidateLine)) {
+        size_t commaPos = candidateLine.find(',');
+        string candidateName = candidateLine.substr(0, commaPos);
+        candidates.push_back(candidateName);
+        cout << candidates.size() << ". " << candidateName << "\n";
+    }
+
+    int choice;
+    cout << "Enter the number corresponding to your choice: ";
+    while (!(cin >> choice) || choice < 1 || choice > static_cast<int>(candidates.size())) {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Invalid choice. Please enter a number between 1 and " << candidates.size() << ": ";
+    }
+
+    candidateFile.clear();
+    candidateFile.seekg(0, ios::beg);
+
+    int candidateIndex = 1;
+    while (getline(candidateFile, candidateLine)) {
+        size_t commaPos = candidateLine.find(',');
+        string candidateName = candidateLine.substr(0, commaPos);
+        int votes = stoi(candidateLine.substr(commaPos + 1));
+
+        if (candidateIndex == choice) {
+            votes++;
+        }
+
+        tempCandidateFile << candidateName << "," << votes << "\n";
+        candidateIndex++;
+    }
+
+    cout << "Vote cast successfully!\n";
+
+    voterFile.close();
+    candidateFile.close();
+    tempCandidateFile.close();
+
+    remove("candidates.txt");
+    rename("temp_candidates.txt", "candidates.txt");
+}
+
+void displayResults() {
+    ifstream candidateFile("candidates.txt");
+    if (!candidateFile.is_open()) {
+        cout << "No candidates found. Please add candidates first.\n";
+        return;
+    }
+
+    cout << "\nElection Results:\n";
+    string line;
+    int maxVotes = 0;
+    string winner;
+    bool tie = false;
+
+    while (getline(candidateFile, line)) {
+        size_t commaPos = line.find(',');
+        string candidateName = line.substr(0, commaPos);
+        int votes = stoi(line.substr(commaPos + 1));
+
+        cout << setw(20) << left << candidateName << ": " << votes << " votes\n";
+        if (votes > maxVotes) {
+            maxVotes = votes;
+            winner = candidateName;
+            tie = false;
+        } else if (votes == maxVotes) {
+            tie = true;
+        }
+    }
+
+    if (tie) {
+        cout << "It's a tie!\n";
+    } else {
+        cout << winner << " won the election!\n";
+    }
+
+    candidateFile.close();
+}
+
+int main() {
+    int mainChoice;
+    do {
+        cout << "\n--- Main Menu ---\n";
+        cout << "1. Admin Login\n";
+        cout << "2. Voting\n";
+        cout << "3. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> mainChoice;
+
+        if (mainChoice == 1) {
+            const string adminUsername = "admin";
+            const string adminPassword = "admin";
+
+            string username, password;
+            cout << "Enter admin username: ";
+            cin >> username;
+            cout << "Enter admin password: ";
+            cin >> password;
+
+            if (username == adminUsername && password == adminPassword) {
+                int adminChoice;
+                do {
+                    cout << "\n--- Admin Panel ---\n";
+                    cout << "1. Register Voters\n";
+                    cout << "2. Add Candidates\n";
+                    cout << "3. Display Results\n";
+                    cout << "4. Exit to Main Menu\n";
+                    cout << "Enter your choice: ";
+                    cin >> adminChoice;
+
+                    if (adminChoice == 1) {
+                        registerVoters();
+                    } else if (adminChoice == 2) {
+                        addCandidates();
+                    } else if (adminChoice == 3) {
+                        displayResults();
+                    } else if (adminChoice != 4) {
+                        cout << "Invalid choice! Try again.\n";
+                    }
+                } while (adminChoice != 4);
+            } else {
+                cout << "Invalid admin credentials.\n";
+            }
+        } else if (mainChoice == 2) {
+            votingProcess();
+        } else if (mainChoice != 3) {
+            cout << "Invalid choice! Try again.\n";
+        }
+    } while (mainChoice != 3);
+
+    cout << "Exiting the program. Goodbye!\n";
+    return 0;
+}
